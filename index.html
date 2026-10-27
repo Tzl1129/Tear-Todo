@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>便利贴墙</title>
+<style>
+  :root {
+    --toolbar-h: 56px;
+    --accent: #5b8c5a;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+    background: #e9e6df;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* ===== 顶部工具栏 ===== */
+  .toolbar {
+    height: var(--toolbar-h);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    background: linear-gradient(#fbfaf6, #f1efe8);
+    border-bottom: 1px solid #d8d4c9;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    position: relative;
+    z-index: 20;
+  }
+  .brand { font-size: 18px; font-weight: 700; color: #4a463c; letter-spacing: 1px; }
+  .brand .pin { color: var(--accent); }
+
+  .wall-nav { display: flex; align-items: center; gap: 10px; }
+  .nav-btn {
+    width: 34px; height: 34px; border: none; border-radius: 50%;
+    background: #fff; color: #5a5447; font-size: 20px; line-height: 1;
+    cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    transition: transform .1s, box-shadow .1s;
+  }
+  .nav-btn:hover { transform: translateY(-1px); box-shadow: 0 3px 6px rgba(0,0,0,0.18); }
+  .nav-btn:active { transform: translateY(0); }
+  .nav-btn:disabled { opacity: .35; cursor: default; transform: none; }
+
+  .indicators { display: flex; gap: 7px; align-items: center; }
+  .dot {
+    width: 9px; height: 9px; border-radius: 50%; background: #cfc9bb;
+    cursor: pointer; transition: all .2s;
+  }
+  .dot.active { background: var(--accent); transform: scale(1.35); }
+
+  .tool-btn {
+    border: 1px solid #d8d4c9; background: #fff; color: #5a5447;
+    font-size: 14px; padding: 7px 14px; border-radius: 20px; cursor: pointer;
+    transition: all .12s; font-family: inherit;
+  }
+  .tool-btn:hover { background: #f7f5ef; box-shadow: 0 2px 5px rgba(0,0,0,0.08); }
+  .tool-btn:disabled { opacity: .4; cursor: default; }
+
+  .wall-actions { display: flex; align-items: center; gap: 10px; }
+  .icon-btn {
+    width: 34px; height: 34px; border: 1px solid #d8d4c9; border-radius: 8px;
+    background: #fff; font-size: 16px; cursor: pointer; color: #5a5447; transition: all .12s;
+  }
+  .icon-btn:hover { background: #faf3f0; border-color: #d9b8b0; }
+  .icon-btn:disabled { opacity: .35; cursor: default; }
+
+  /* ===== 墙壁区域 ===== */
+  #viewport {
+    position: relative; height: calc(100% - var(--toolbar-h));
+    overflow: hidden; background: #d9d5cb;
+  }
+  #walls {
+    display: flex; height: 100%;
+    transition: transform .45s cubic-bezier(.4, .1, .2, 1); will-change: transform;
+  }
+  .wall {
+    flex: 0 0 100%; height: 100%; position: relative;
+    background:
+      repeating-linear-gradient(0deg, rgba(120,110,90,0.02) 0 1px, transparent 1px 4px),
+      linear-gradient(180deg, #ffffff 0%, #fbfaf7 40%, #f4f2ec 100%);
+    box-shadow: inset 0 0 120px rgba(120,110,90,0.08);
+    overflow: hidden; cursor: crosshair;
+  }
+
+  /* 四象限墙坐标轴 */
+  .wall.quadrant .axis-h {
+    position: absolute; left: 0; right: 0; top: 50%; height: 2px;
+    background: #c0392b;
+  }
+  .wall.quadrant .axis-v {
+    position: absolute; top: 0; bottom: 0; left: 50%; width: 2px;
+    background: #c0392b;
+  }
+  .quad-label {
+    position: absolute; font-size: 15px; color: #1a1a1a;
+    letter-spacing: 1px; pointer-events: none; font-weight: 700;
+  }
+  .quad-label.q-tl { top: 10px; left: 14px; }
+  .quad-label.q-tr { top: 10px; right: 14px; }
+  .quad-label.q-bl { bottom: 10px; left: 14px; }
+  .quad-label.q-br { bottom: 10px; right: 14px; }
+  .axis-label {
+    position: absolute; font-size: 13px; color: #1a1a1a; font-weight: 700;
+    pointer-events: none; letter-spacing: 1px;
+  }
+  .axis-label.h-left { left: 14px; top: calc(50% + 10px); }
+  .axis-label.h-right { right: 14px; top: calc(50% + 10px); }
+  .axis-label.v-top { top: 10px; left: calc(50% + 10px); }
+  .axis-label.v-bottom { bottom: 10px; left: calc(50% + 10px); }
+
+  /* 工具栏墙名（墙外右上角） */
+  .toolbar-wall-name {
+    font-size: 16px; font-weight: 700; color: #5a5447; letter-spacing: 1px;
+    padding: 6px 12px; cursor: text; border-radius: 8px;
+    border: 1px dashed transparent; transition: all .15s; white-space: nowrap;
+  }
+  .toolbar-wall-name:hover { background: rgba(0,0,0,0.06); border-color: #c9c3b6; }
+  .toolbar-wall-name input {
+    font-size: 16px; font-weight: 700; font-family: inherit; letter-spacing: 1px;
+    border: 1px dashed #b9b2a2; border-radius: 8px; padding: 2px 8px;
+    color: #5a5447; background: #fff; outline: none; width: 150px;
+  }
+
+  /* ===== 便利贴 ===== */
+  .note {
+    position: absolute; width: 200px; min-height: 120px;
+    padding: 26px 16px 34px;
+    background:
+      linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 55%),
+      linear-gradient(rgba(0,0,0,0.02) 1px, transparent 1px),
+      var(--note-color, #b8e0a8);
+    background-size: auto, 100% 26px, auto;
+    color: var(--note-text, #2f5233);
+    box-shadow:
+      0 1px 2px rgba(0,0,0,0.12),
+      0 6px 14px rgba(0,0,0,0.16),
+      0 16px 30px rgba(0,0,0,0.08);
+    cursor: grab; z-index: 2; transform-origin: center;
+    animation: pop-in .22s cubic-bezier(.2, 1.4, .5, 1);
+    transition: box-shadow .2s, filter .3s;
+  }
+  .note:hover {
+    box-shadow:
+      0 2px 4px rgba(0,0,0,0.16),
+      0 10px 22px rgba(0,0,0,0.22),
+      0 24px 46px rgba(0,0,0,0.12);
+    z-index: 6;
+  }
+  .note.dragging {
+    cursor: grabbing; z-index: 10;
+    filter: drop-shadow(0 12px 16px rgba(0,0,0,0.25)); transition: none;
+  }
+  .note.tearing-hint { opacity: .7; filter: saturate(.7); }
+
+  @keyframes pop-in {
+    from { transform: scale(.5); opacity: 0; }
+    to   { transform: scale(1); opacity: 1; }
+  }
+
+  .note .tape {
+    position: absolute; top: -9px; left: 50%; width: 74px; height: 24px; margin-left: -37px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.65), rgba(255,255,255,0.25));
+    border-left: 1px dashed rgba(255,255,255,0.6); border-right: 1px dashed rgba(255,255,255,0.6);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.08); opacity: .9;
+  }
+
+  .note .note-text { font-size: 16px; line-height: 26px; white-space: pre-wrap; word-break: break-word; }
+  .note .note-meta {
+    position: absolute; left: 16px; right: 16px; bottom: 22px;
+    font-size: 12px; opacity: .75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .note .note-meta.overdue { color: #b3452f; font-weight: 700; opacity: 1; }
+  .note .note-reward {
+    position: absolute; left: 16px; right: 16px; bottom: 8px;
+    font-size: 12px; opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* 破损状态 */
+  .note.broken {
+    filter: saturate(.55) brightness(.93);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 4px 8px rgba(0,0,0,0.12);
+  }
+  .note.broken::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background:
+      linear-gradient(28deg, transparent 42%, rgba(90,70,40,0.5) 42%, rgba(90,70,40,0.5) 43%, transparent 43%),
+      linear-gradient(-32deg, transparent 55%, rgba(90,70,40,0.45) 55%, rgba(90,70,40,0.45) 56%, transparent 56%),
+      linear-gradient(12deg, transparent 70%, rgba(90,70,40,0.4) 70%, rgba(90,70,40,0.4) 71%, transparent 71%);
+  }
+  .note.broken::after {
+    content: "已破损"; position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%) rotate(-8deg); font-size: 20px; font-weight: 700;
+    color: rgba(140,40,25,0.55); border: 2px solid rgba(140,40,25,0.45); border-radius: 4px;
+    padding: 2px 10px; pointer-events: none;
+  }
+
+  /* ===== 撕纸碎片 ===== */
+  .tear-piece {
+    position: fixed; z-index: 9999; pointer-events: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  }
+  .tear-piece .tp-text {
+    font-size: 15px; line-height: 22px; white-space: pre-wrap; word-break: break-word;
+    padding: 22px 14px 20px; color: var(--note-text, #2f5233); overflow: hidden;
+  }
+
+  /* ===== 弹窗通用 ===== */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(40,36,28,0.4); z-index: 100;
+    display: flex; align-items: center; justify-content: center;
+    animation: fade-in .18s ease;
+  }
+  .overlay[hidden] { display: none; }
+  @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+  .editor {
+    width: 340px; background: #fbfaf6; border-radius: 14px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.35); padding: 20px;
+    animation: slide-up .22s cubic-bezier(.2,1.3,.5,1);
+  }
+  @keyframes slide-up { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  .editor h3 { font-size: 16px; color: #4a463c; margin-bottom: 12px; }
+  .editor textarea, .editor input[type="text"] {
+    width: 100%; border: 1px solid #d8d4c9; border-radius: 8px; padding: 10px;
+    font-size: 15px; font-family: inherit; color: #3a362c; outline: none; background: #fff;
+  }
+  .editor textarea { height: 96px; resize: none; }
+  .editor textarea:focus, .editor input[type="text"]:focus { border-color: var(--accent); }
+
+  .editor .row-label { font-size: 13px; color: #8a8272; margin: 14px 0 7px; }
+  .palette { display: flex; gap: 8px; flex-wrap: wrap; }
+  .swatch {
+    width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
+    border: 3px solid transparent; box-shadow: 0 1px 3px rgba(0,0,0,0.2); transition: transform .12s;
+  }
+  .swatch:hover { transform: scale(1.15); }
+  .swatch.selected { border-color: #4a463c; transform: scale(1.15); }
+
+  .deadline-row { display: flex; gap: 8px; align-items: center; }
+  .editor input[type="datetime-local"] {
+    flex: 1; border: 1px solid #d8d4c9; border-radius: 8px; padding: 7px 9px;
+    font-size: 14px; font-family: inherit; color: #3a362c; outline: none; background: #fff;
+  }
+  .link-btn {
+    border: none; background: none; color: #b3452f; cursor: pointer;
+    font-size: 13px; font-family: inherit; white-space: nowrap;
+  }
+  .link-btn:hover { text-decoration: underline; }
+
+  .editor .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+  .btn {
+    border: none; border-radius: 8px; padding: 9px 18px; font-size: 14px;
+    font-family: inherit; cursor: pointer; transition: all .12s;
+  }
+  .btn.primary { background: var(--accent); color: #fff; }
+  .btn.primary:hover { background: #4a7a49; }
+  .btn.ghost { background: #eeeae0; color: #5a5447; }
+  .btn.ghost:hover { background: #e3ded2; }
+  .btn.danger { background: #b3452f; color: #fff; }
+  .btn.danger:hover { background: #9c3a28; }
+
+  /* 墙类型选择 */
+  .type-options { display: flex; flex-direction: column; gap: 10px; }
+  .type-opt {
+    border: 2px solid #e3ded2; border-radius: 12px; background: #fff;
+    padding: 16px; font-size: 15px; font-family: inherit; cursor: pointer;
+    color: #4a463c; transition: all .12s; text-align: left;
+  }
+  .type-opt:hover { border-color: var(--accent); background: #f7faf3; }
+  .type-opt .sub { display: block; font-size: 12px; color: #9a9282; margin-top: 4px; }
+
+  /* 确认框 */
+  .confirm-box {
+    width: 320px; background: #fbfaf6; border-radius: 14px; padding: 22px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.35); animation: slide-up .22s cubic-bezier(.2,1.3,.5,1);
+  }
+  .confirm-box h3 { font-size: 17px; color: #4a463c; margin-bottom: 10px; }
+  .confirm-box p { font-size: 14px; color: #6b655a; line-height: 1.7; margin-bottom: 18px; }
+
+  /* ===== 左上角设置按钮 ===== */
+  .toolbar-left { display: flex; align-items: center; gap: 10px; }
+  .settings-btn {
+    width: 34px; height: 34px;
+    border: 1px solid #d8d4c9; border-radius: 8px; background: #fff;
+    font-size: 17px; cursor: pointer; color: #5a5447; transition: all .12s;
+  }
+  .settings-btn:hover { background: #f7f5ef; transform: rotate(30deg); }
+  .settings-panel {
+    position: fixed; left: 16px; top: 64px; background: #fff; border-radius: 12px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.25); padding: 8px; z-index: 60; min-width: 170px;
+  }
+  .settings-item { padding: 11px 14px; border-radius: 8px; cursor: pointer; font-size: 14px; color: #4a463c; }
+  .settings-item:hover { background: #f4f1ea; }
+  .settings-item.danger { color: #b3452f; }
+
+  /* ===== 鼓励语 & 奖励庆祝 ===== */
+  .cheer-banner {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    font-size: 36px; font-weight: 700; color: #4a463c;
+    background: #fff; padding: 20px 44px; border-radius: 18px;
+    box-shadow: 0 24px 70px rgba(0,0,0,0.35); z-index: 300; pointer-events: none;
+    white-space: nowrap;
+    animation: cheer-pop .5s cubic-bezier(.2,1.6,.4,1), cheer-out .4s ease 2.2s forwards;
+  }
+  .cheer-banner.has-reward { top: 58%; }
+  @keyframes cheer-pop {
+    from { transform: translate(-50%,-50%) scale(.3); opacity: 0; }
+    to   { transform: translate(-50%,-50%) scale(1); opacity: 1; }
+  }
+  @keyframes cheer-out {
+    to { transform: translate(-50%,-62%) scale(.9); opacity: 0; }
+  }
+
+  .reward-card {
+    position: fixed; top: 32%; left: 50%; transform: translate(-50%, -50%);
+    background: linear-gradient(160deg, #fff8e1, #fff3d6); border: 2px solid #e8c96a;
+    border-radius: 18px; padding: 18px 32px; z-index: 301; pointer-events: none;
+    box-shadow: 0 24px 70px rgba(0,0,0,0.35); text-align: center; min-width: 220px; max-width: 70vw;
+    animation: cheer-pop .5s cubic-bezier(.2,1.6,.4,1), cheer-out .4s ease 2.6s forwards;
+  }
+  .reward-card .reward-emoji { font-size: 40px; }
+  .reward-card .reward-label { font-size: 14px; color: #a07c2a; margin-top: 6px; letter-spacing: 2px; }
+  .reward-card .reward-text { font-size: 20px; font-weight: 700; color: #6b4f10; margin-top: 6px; white-space: pre-wrap; word-break: break-word; }
+
+  .confetti {
+    position: fixed; top: -20px; z-index: 302; border-radius: 2px; pointer-events: none;
+    animation-name: confetti-fall; animation-timing-function: linear; animation-fill-mode: forwards;
+  }
+  @keyframes confetti-fall {
+    0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+    100% { transform: translateY(108vh) rotate(720deg); opacity: .7; }
+  }
+
+  /* ===== 提示 toast ===== */
+  .toast {
+    position: fixed; bottom: 28px; left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: rgba(40,36,28,0.88); color: #fff; padding: 10px 20px;
+    border-radius: 22px; font-size: 14px; opacity: 0; pointer-events: none;
+    transition: all .3s; z-index: 200; letter-spacing: 1px;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+  <header class="toolbar">
+    <div class="toolbar-left">
+      <button class="settings-btn" id="settingsBtn" title="设置">⚙</button>
+      <div class="brand"><span class="pin">📌</span> 便利贴墙</div>
+    </div>
+    <div class="wall-nav">
+      <button class="nav-btn" id="prevWall" title="上一面墙">‹</button>
+      <div class="indicators" id="indicators"></div>
+      <button class="nav-btn" id="nextWall" title="下一面墙">›</button>
+      <button class="tool-btn" id="addWall">＋ 新墙</button>
+    </div>
+    <div class="wall-actions">
+      <span class="toolbar-wall-name" id="toolbarWallName" title="点击重命名">我的任务</span>
+      <button class="icon-btn" id="deleteWall" title="删除当前墙壁">🗑</button>
+    </div>
+  </header>
+
+  <main id="viewport">
+    <div id="walls"></div>
+  </main>
+
+  <!-- 设置面板（左上角弹出） -->
+  <div class="settings-panel" id="settingsPanel" hidden>
+    <div class="settings-item danger" id="resetData">🔄 重置数据</div>
+  </div>
+
+  <!-- 编辑弹窗 -->
+  <div class="overlay" id="editorOverlay" hidden>
+    <div class="editor">
+      <h3 id="editorTitle">新便利贴</h3>
+      <textarea id="noteInput" placeholder="写下要做的事……"></textarea>
+      <div class="row-label">颜色</div>
+      <div class="palette" id="palette"></div>
+      <div class="row-label">截止时间（可选，到期未完成会变破损）</div>
+      <div class="deadline-row">
+        <input type="datetime-local" id="deadlineInput">
+        <button class="link-btn" id="clearDeadline">清除时间</button>
+      </div>
+      <div class="row-label">完成后奖励（可选，完成后会有庆祝）</div>
+      <input type="text" id="rewardInput" placeholder="比如：吃顿火锅 🎁">
+      <div class="actions">
+        <button class="btn ghost" id="cancelEdit">取消</button>
+        <button class="btn primary" id="saveEdit">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 墙类型选择弹窗 -->
+  <div class="overlay" id="typeOverlay" hidden>
+    <div class="editor" style="width:300px">
+      <h3>选择新墙类型</h3>
+      <div class="type-options">
+        <button class="type-opt" id="addPlainWall">⬜ 普通白墙<span class="sub">什么都没有，随便贴便利贴</span></button>
+        <button class="type-opt" id="addQuadrantWall">➕ 四象限墙<span class="sub">带重要 / 紧急坐标轴，分类任务</span></button>
+      </div>
+      <div class="actions">
+        <button class="btn ghost" id="cancelType">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 重置确认弹窗 -->
+  <div class="overlay" id="confirmOverlay" hidden>
+    <div class="confirm-box">
+      <h3>重置数据</h3>
+      <p>确定要重置吗？<br>所有墙壁和便利贴都会被清空，恢复到最初的默认状态。</p>
+      <div class="actions">
+        <button class="btn ghost" id="confirmCancel">取消</button>
+        <button class="btn danger" id="confirmOk">确定重置</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+
+/* ================= 常量与颜色 ================= */
+const STORAGE_KEY = "sticky-wall-v1";
+const MAX_WALLS = 10;
+
+const COLORS = [
+  { id: "green",  name: "绿", base: "#b8e0a8", text: "#2f5233" },
+  { id: "yellow", name: "黄", base: "#f9e27c", text: "#6b5b1a" },
+  { id: "pink",   name: "粉", base: "#f6b8cf", text: "#7a2f4a" },
+  { id: "blue",   name: "蓝", base: "#a9d4f0", text: "#2a4a63" },
+  { id: "orange", name: "橙", base: "#ffce8a", text: "#7a4a1a" },
+  { id: "purple", name: "紫", base: "#cbb8f0", text: "#4a2f6b" },
+  { id: "white",  name: "白", base: "#fbfaf0", text: "#4a463c" },
+];
+const DEFAULT_COLOR = "green";
+
+const CHEERS = [
+  "你真棒！", "我就知道你能做到！", "恭喜你又进步了！",
+  "太厉害了！", "又完成一件，了不起！", "继续加油！",
+  "做得漂亮！", "坚持就是胜利！", "你比自己想象的更强大！",
+];
+
+/* ================= 数据 ================= */
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+function defaultState() {
+  return {
+    current: 0,
+    walls: [
+      {
+        id: uid(),
+        name: "我的任务",
+        type: "plain",
+        notes: [
+          {
+            id: uid(),
+            text: "欢迎使用便利贴墙！\n点击墙面空白处，贴一张新便利贴。",
+            color: "green",
+            x: 32, y: 30,
+            rotation: -2, tapeRotation: -3,
+            deadline: null, reward: "",
+            createdAt: Date.now(),
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function load() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    if (!s || !Array.isArray(s.walls) || s.walls.length === 0) return null;
+    s.walls.forEach((w) => { if (!w.type) w.type = "plain"; });
+    return s;
+  } catch (e) { return null; }
+}
+function save() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+}
+
+let state = load() || defaultState();
+
+/* ================= DOM ================= */
+const $ = (id) => document.getElementById(id);
+const viewport = $("viewport");
+const wallsEl = $("walls");
+const indicatorsEl = $("indicators");
+const prevBtn = $("prevWall");
+const nextBtn = $("nextWall");
+const addBtn = $("addWall");
+const deleteBtn = $("deleteWall");
+const editorOverlay = $("editorOverlay");
+const editorTitle = $("editorTitle");
+const noteInput = $("noteInput");
+const paletteEl = $("palette");
+const deadlineInput = $("deadlineInput");
+const rewardInput = $("rewardInput");
+const clearDeadlineBtn = $("clearDeadline");
+const cancelBtn = $("cancelEdit");
+const saveBtn = $("saveEdit");
+const toastEl = $("toast");
+const typeOverlay = $("typeOverlay");
+const addPlainBtn = $("addPlainWall");
+const addQuadrantBtn = $("addQuadrantWall");
+const cancelTypeBtn = $("cancelType");
+const settingsBtn = $("settingsBtn");
+const settingsPanel = $("settingsPanel");
+const resetDataBtn = $("resetData");
+const confirmOverlay = $("confirmOverlay");
+const confirmCancelBtn = $("confirmCancel");
+const confirmOkBtn = $("confirmOk");
+const toolbarWallName = $("toolbarWallName");
+
+/* ================= 音效（Web Audio 合成） ================= */
+let audioCtx = null;
+function getAudio() {
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) audioCtx = new AC();
+  }
+  if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+  return audioCtx;
+}
+
+function playTearSound() {
+  const ctx = getAudio();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  const duration = 0.45;
+  const size = Math.floor(ctx.sampleRate * duration);
+  const buffer = ctx.createBuffer(1, size, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < size; i++) {
+    const t = i / size;
+    const crackle = Math.sin(t * 55) * 0.35 + 0.65;
+    data[i] = (Math.random() * 2 - 1) * (1 - t) * crackle;
+  }
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  const filter = ctx.createBiquadFilter();
+  filter.type = "bandpass";
+  filter.frequency.setValueAtTime(1300, now);
+  filter.frequency.linearRampToValueAtTime(3200, now + duration);
+  filter.Q.value = 1.1;
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.7, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+  src.connect(filter); filter.connect(gain); gain.connect(ctx.destination);
+  src.start(now);
+}
+
+function playPopSound() {
+  const ctx = getAudio();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(520, now);
+  osc.frequency.exponentialRampToValueAtTime(240, now + 0.14);
+  gain.gain.setValueAtTime(0.35, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+  osc.connect(gain); gain.connect(ctx.destination);
+  osc.start(now); osc.stop(now + 0.18);
+}
+
+function playDoneSound() {
+  const ctx = getAudio();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  [660, 880, 1100].forEach((f, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "triangle";
+    osc.frequency.value = f;
+    const t = now + i * 0.09;
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(t); osc.stop(t + 0.22);
+  });
+}
+
+/* ================= 工具函数 ================= */
+function colorById(id) { return COLORS.find((c) => c.id === id) || COLORS[0]; }
+function hashStr(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+function toast(msg, ms) {
+  toastEl.textContent = msg;
+  toastEl.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => toastEl.classList.remove("show"), ms || 1800);
+}
+function formatDeadline(ts) {
+  const d = new Date(ts);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function formatOverdue(ts) {
+  const diff = Date.now() - ts;
+  const min = Math.floor(diff / 60000);
+  const hour = Math.floor(diff / 3600000);
+  const day = Math.floor(diff / 86400000);
+  if (min < 1) return "刚刚到期";
+  if (min < 60) return `已逾期 ${min} 分钟`;
+  if (hour < 24) return `已逾期 ${hour} 小时`;
+  return `已逾期 ${day} 天`;
+}
+function toLocalInput(ts) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+/* ================= 渲染 ================= */
+function render() {
+  renderWalls();
+  renderIndicators();
+  renderWallNameLabel();
+  updateNavButtons();
+  save();
+}
+
+function renderWallNameLabel() {
+  toolbarWallName.textContent = state.walls[state.current].name;
+}
+
+function renderWalls() {
+  wallsEl.innerHTML = "";
+  state.walls.forEach((wall, i) => {
+    const wallEl = document.createElement("section");
+    wallEl.className = "wall" + (wall.type === "quadrant" ? " quadrant" : "");
+    wallEl.dataset.index = i;
+    wallEl.addEventListener("click", onWallClick);
+
+    // 四象限坐标轴 + 标签
+    if (wall.type === "quadrant") {
+      const axisH = document.createElement("div"); axisH.className = "axis-h";
+      const axisV = document.createElement("div"); axisV.className = "axis-v";
+      wallEl.appendChild(axisH); wallEl.appendChild(axisV);
+
+      const labels = [
+        { cls: "q-tl", text: "重要不紧急" },
+        { cls: "q-tr", text: "重要且紧急" },
+        { cls: "q-bl", text: "不重要不紧急" },
+        { cls: "q-br", text: "不重要但紧急" },
+      ];
+      labels.forEach((l) => {
+        const d = document.createElement("div");
+        d.className = "quad-label " + l.cls;
+        d.textContent = l.text;
+        wallEl.appendChild(d);
+      });
+
+      const axes = [
+        { cls: "h-left", text: "不紧急" },
+        { cls: "h-right", text: "紧急" },
+        { cls: "v-top", text: "重要" },
+        { cls: "v-bottom", text: "不重要" },
+      ];
+      axes.forEach((l) => {
+        const d = document.createElement("div");
+        d.className = "axis-label " + l.cls;
+        d.textContent = l.text;
+        wallEl.appendChild(d);
+      });
+    }
+
+    // 便利贴
+    wall.notes.forEach((note) => wallEl.appendChild(buildNoteEl(note)));
+
+    wallsEl.appendChild(wallEl);
+  });
+  wallsEl.style.transform = `translateX(-${state.current * 100}%)`;
+}
+
+function buildNoteEl(note) {
+  const c = colorById(note.color);
+  const el = document.createElement("div");
+  el.className = "note";
+  el.dataset.id = note.id;
+  el.style.left = note.x + "%";
+  el.style.top = note.y + "%";
+  el.style.setProperty("--note-color", c.base);
+  el.style.setProperty("--note-text", c.text);
+  el.style.transform = `rotate(${note.rotation || 0}deg)`;
+
+  const tapeRot = (note.tapeRotation !== undefined) ? note.tapeRotation : ((hashStr(note.id) % 9) - 4);
+  const tape = document.createElement("div");
+  tape.className = "tape";
+  tape.style.transform = `rotate(${tapeRot}deg)`;
+
+  const text = document.createElement("div");
+  text.className = "note-text";
+  text.textContent = note.text || " ";
+
+  const meta = document.createElement("div");
+  meta.className = "note-meta";
+  const overdue = note.deadline && note.deadline < Date.now();
+  if (overdue) {
+    el.classList.add("broken");
+    meta.classList.add("overdue");
+    meta.textContent = "⏰ " + formatOverdue(note.deadline);
+  } else if (note.deadline) {
+    meta.textContent = "⏰ " + formatDeadline(note.deadline);
+  }
+
+  // 奖励标记（贴纸底部小字）
+  const rewardEl = document.createElement("div");
+  rewardEl.className = "note-reward";
+  rewardEl.textContent = note.reward ? "🎁 " + note.reward : "";
+
+  el.appendChild(tape);
+  el.appendChild(text);
+  el.appendChild(meta);
+  el.appendChild(rewardEl);
+
+  el.addEventListener("mousedown", (e) => startDrag(e, el, note));
+  el.addEventListener("dblclick", (e) => { e.stopPropagation(); openEditor(note); });
+
+  return el;
+}
+
+function renderIndicators() {
+  indicatorsEl.innerHTML = "";
+  state.walls.forEach((wall, i) => {
+    const dot = document.createElement("div");
+    dot.className = "dot" + (i === state.current ? " active" : "");
+    dot.title = wall.name;
+    dot.addEventListener("click", () => switchWall(i));
+    indicatorsEl.appendChild(dot);
+  });
+}
+
+function updateNavButtons() {
+  prevBtn.disabled = state.current <= 0;
+  nextBtn.disabled = state.current >= state.walls.length - 1;
+  deleteBtn.disabled = state.walls.length <= 1;
+  addBtn.disabled = state.walls.length >= MAX_WALLS;
+}
+
+/* ================= 墙壁操作 ================= */
+function switchWall(i) {
+  if (i < 0 || i >= state.walls.length) return;
+  state.current = i;
+  render();
+}
+
+function openAddWall() { typeOverlay.hidden = false; }
+
+function addWall(type) {
+  if (state.walls.length >= MAX_WALLS) { toast("最多只能有 10 面墙"); return; }
+  state.walls.push({ id: uid(), name: `新墙壁 ${state.walls.length + 1}`, type: type || "plain", notes: [] });
+  state.current = state.walls.length - 1;
+  typeOverlay.hidden = true;
+  render();
+  toast(type === "quadrant" ? "已添加四象限墙" : "已添加一面新墙");
+}
+
+function deleteWall() {
+  if (state.walls.length <= 1) { toast("至少要保留一面墙"); return; }
+  const wall = state.walls[state.current];
+  if (!confirm(`确定删除墙壁「${wall.name}」吗？\n墙上的 ${wall.notes.length} 张便利贴也会一起删除。`)) return;
+  state.walls.splice(state.current, 1);
+  if (state.current >= state.walls.length) state.current = state.walls.length - 1;
+  render();
+  toast("墙壁已删除");
+}
+
+function renameWall() {
+  const wall = state.walls[state.current];
+  const input = document.createElement("input");
+  input.value = wall.name;
+  input.maxLength = 20;
+  toolbarWallName.textContent = "";
+  toolbarWallName.appendChild(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const finish = (commit) => {
+    if (done) return;
+    done = true;
+    const v = input.value.trim();
+    if (commit && v) wall.name = v;
+    render();
+  };
+  input.addEventListener("blur", () => finish(true));
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") finish(true);
+    else if (e.key === "Escape") finish(false);
+    e.stopPropagation();
+  });
+  input.addEventListener("mousedown", (e) => e.stopPropagation());
+}
+
+/* ================= 创建便利贴 ================= */
+function onWallClick(e) {
+  if (e.target.closest(".note")) return;
+  if (dragJustFinished) return;
+  const wallEl = e.currentTarget;
+  const rect = wallEl.getBoundingClientRect();
+  const x = ((e.clientX - rect.left) / rect.width) * 100;
+  const y = ((e.clientY - rect.top) / rect.height) * 100;
+  openEditor(null, x, y);
+}
+
+/* ================= 编辑弹窗 ================= */
+let editing = null;
+
+function openEditor(note, x, y) {
+  editing = { note, x, y };
+  editorTitle.textContent = note ? "编辑便利贴" : "新便利贴";
+  noteInput.value = note ? note.text : "";
+  renderPalette(note ? note.color : DEFAULT_COLOR);
+  deadlineInput.value = note && note.deadline ? toLocalInput(note.deadline) : "";
+  rewardInput.value = note && note.reward ? note.reward : "";
+  editorOverlay.hidden = false;
+  noteInput.focus();
+}
+
+function renderPalette(selectedId) {
+  paletteEl.innerHTML = "";
+  COLORS.forEach((c) => {
+    const s = document.createElement("div");
+    s.className = "swatch" + (c.id === selectedId ? " selected" : "");
+    s.style.background = c.base;
+    s.title = c.name;
+    s.dataset.color = c.id;
+    s.addEventListener("click", () => {
+      paletteEl.querySelectorAll(".swatch").forEach((el) => el.classList.remove("selected"));
+      s.classList.add("selected");
+    });
+    paletteEl.appendChild(s);
+  });
+}
+
+function selectedColor() {
+  const sel = paletteEl.querySelector(".swatch.selected");
+  return sel ? sel.dataset.color : DEFAULT_COLOR;
+}
+
+function closeEditor() { editorOverlay.hidden = true; editing = null; }
+
+function saveFromEditor() {
+  if (!editing) { closeEditor(); return; }
+  const text = noteInput.value.trim();
+  if (!text) { noteInput.focus(); toast("写点内容再保存吧"); return; }
+  const color = selectedColor();
+  const deadlineVal = deadlineInput.value;
+  const deadline = deadlineVal ? new Date(deadlineVal).getTime() : null;
+  const reward = rewardInput.value.trim();
+
+  const wall = state.walls[state.current];
+  if (editing.note) {
+    editing.note.text = text;
+    editing.note.color = color;
+    editing.note.deadline = deadline;
+    editing.note.reward = reward;
+    toast("已更新");
+  } else {
+    wall.notes.push({
+      id: uid(),
+      text,
+      color,
+      x: clamp(editing.x, 6, 82),
+      y: clamp(editing.y, 8, 78),
+      rotation: Math.round((Math.random() * 6 - 3) * 10) / 10,
+      tapeRotation: Math.round((Math.random() * 8 - 4) * 10) / 10,
+      deadline,
+      reward,
+      createdAt: Date.now(),
+    });
+    playPopSound();
+    toast("已贴上便利贴");
+  }
+  closeEditor();
+  render();
+}
+
+/* ================= 拖拽移动 ================= */
+let drag = null;
+let dragJustFinished = false;
+
+function startDrag(e, el, note) {
+  if (e.button !== undefined && e.button !== 0) return;
+  e.preventDefault();
+  const noteRect = el.getBoundingClientRect();
+  const relY = (e.clientY - noteRect.top) / noteRect.height;
+  // 按住底部 1/4 区域 = 撕；其余 = 移动位置
+  if (relY > 0.75) {
+    const relX = (e.clientX - noteRect.left) / noteRect.width;
+    const dir = relX < 0.33 ? "bl" : (relX < 0.66 ? "bc" : "br");
+    startTear(e, el, note, dir, noteRect);
+    return;
+  }
+  const wallEl = el.closest(".wall");
+  const rect = wallEl.getBoundingClientRect();
+  drag = {
+    el, note,
+    wallRect: rect,
+    startX: e.clientX, startY: e.clientY,
+    origX: note.x, origY: note.y,
+    moved: false,
+  };
+  el.classList.add("dragging");
+  document.addEventListener("mousemove", onDragMove);
+  document.addEventListener("mouseup", onDragEnd);
+}
+
+function onDragMove(e) {
+  if (!drag) return;
+  const dx = e.clientX - drag.startX;
+  const dy = e.clientY - drag.startY;
+  if (Math.abs(dx) > 3 || Math.abs(dy) > 3) drag.moved = true;
+  if (!drag.moved) return;
+
+  const nx = drag.origX + (dx / drag.wallRect.width) * 100;
+  const ny = drag.origY + (dy / drag.wallRect.height) * 100;
+  drag.el.style.left = nx + "%";
+  drag.el.style.top = ny + "%";
+  drag.el.style.transform = `rotate(${drag.note.rotation || 0}deg) scale(1.03)`;
+}
+
+function onDragEnd() {
+  document.removeEventListener("mousemove", onDragMove);
+  document.removeEventListener("mouseup", onDragEnd);
+  if (!drag) return;
+  const d = drag;
+  drag = null;
+  d.el.classList.remove("dragging");
+  d.el.style.transform = `rotate(${d.note.rotation || 0}deg)`;
+  if (d.moved) {
+    const r = d.wallRect;
+    d.note.x = clamp(((d.el.getBoundingClientRect().left - r.left) / r.width) * 100, 0, 96);
+    d.note.y = clamp(((d.el.getBoundingClientRect().top - r.top) / r.height) * 100, 0, 90);
+    save();
+    dragJustFinished = true;
+    setTimeout(() => { dragJustFinished = false; }, 0);
+  }
+}
+
+/* ================= 撕纸（实时仿真，从底部往上撕） ================= */
+let tear = null;
+
+function startTear(e, el, note, dir, rect) {
+  e.preventDefault();
+  const c = colorById(note.color);
+  const wallEl = el.closest(".wall");
+  const wallIndex = wallEl ? Number(wallEl.dataset.index) : state.current;
+
+  el.style.visibility = "hidden";
+  const pieceA = makeTearPiece(note.text, c, rect);
+  const pieceB = makeTearPiece(note.text, c, rect);
+
+  const S = { bc: [50, 100], bl: [0, 100], br: [100, 100] }[dir];
+  pieceA.style.transformOrigin = S[0] + "% " + S[1] + "%";
+  pieceB.style.transformOrigin = S[0] + "% " + S[1] + "%";
+
+  tear = { el, note, dir, rect, wallIndex, pieceA, pieceB };
+
+  const mx = clamp((e.clientX - rect.left) / rect.width * 100, 0, 100);
+  const my = clamp((e.clientY - rect.top) / rect.height * 100, 0, 100);
+  updateTearVisuals(tear, mx, my);
+
+  document.addEventListener("mousemove", onTearMove);
+  document.addEventListener("mouseup", onTearEnd);
+}
+
+function onTearMove(e) {
+  if (!tear) return;
+  const rect = tear.rect;
+  const mx = clamp((e.clientX - rect.left) / rect.width * 100, 0, 100);
+  const my = clamp((e.clientY - rect.top) / rect.height * 100, 0, 100);
+  updateTearVisuals(tear, mx, my);
+  if (my <= 2) finishTear();
+}
+
+function updateTearVisuals(t, mx, my) {
+  const clips = tearClips(t.dir, mx, my);
+  const p = clamp((100 - my) / 100, 0, 1);
+  t.pieceA.style.clipPath = clips[0];
+  t.pieceB.style.clipPath = clips[1];
+  t.pieceA.style.transform = tearTransform(t.dir, p, "A");
+  t.pieceB.style.transform = tearTransform(t.dir, p, "B");
+}
+
+function onTearEnd() {
+  document.removeEventListener("mousemove", onTearMove);
+  document.removeEventListener("mouseup", onTearEnd);
+  if (!tear) return;
+  const t = tear;
+  tear = null;
+  // 没撕到底就松手：取消，恢复原贴纸
+  t.el.style.visibility = "visible";
+  t.pieceA.remove();
+  t.pieceB.remove();
+}
+
+function finishTear() {
+  const t = tear;
+  tear = null;
+  document.removeEventListener("mousemove", onTearMove);
+  document.removeEventListener("mouseup", onTearEnd);
+  playTearSound();
+  animatePiece(t.pieceA, flyFor(t.dir, "A"));
+  animatePiece(t.pieceB, flyFor(t.dir, "B"));
+
+  setTimeout(() => {
+    const wall = state.walls[t.wallIndex];
+    if (wall) wall.notes = wall.notes.filter((n) => n.id !== t.note.id);
+    playDoneSound();
+    render();
+    showCheer(t.note);
+  }, 520);
+}
+
+function makeTearPiece(text, color, rect) {
+  const piece = document.createElement("div");
+  piece.className = "tear-piece";
+  piece.style.width = rect.width + "px";
+  piece.style.height = rect.height + "px";
+  piece.style.left = rect.left + "px";
+  piece.style.top = rect.top + "px";
+  piece.style.background =
+    `linear-gradient(135deg, rgba(255,255,255,0.35), rgba(255,255,255,0) 55%), ${color.base}`;
+  piece.style.setProperty("--note-text", color.text);
+  const t = document.createElement("div");
+  t.className = "tp-text";
+  t.textContent = text || " ";
+  piece.appendChild(t);
+  document.body.appendChild(piece);
+  return piece;
+}
+
+// 沿 from→to 生成点序列（不含起点）；jagged=true 时加锯齿
+function linePts(from, to, jagged, teeth) {
+  const pts = [];
+  const n = jagged ? Math.max(2, teeth) : 1;
+  const dx = to[0] - from[0];
+  const dy = to[1] - from[1];
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len;
+  const ny = dx / len;
+  for (let i = 1; i <= n; i++) {
+    const t = i / n;
+    let x = from[0] + dx * t;
+    let y = from[1] + dy * t;
+    if (jagged) {
+      const off = (i % 2 === 0 ? 4 : -4);
+      x += nx * off;
+      y += ny * off;
+    }
+    pts.push([x, y]);
+  }
+  return pts;
+}
+
+// 根据撕向和鼠标位置，返回两半的 clip-path（撕裂线实时跟随鼠标）
+function tearClips(dir, mx, my) {
+  const S = { bc: [50, 100], bl: [0, 100], br: [100, 100] }[dir];
+  const T = { bc: [50, 0], bl: [100, 0], br: [0, 0] }[dir];
+  const E = [mx, my];
+  const fmt = (pts) => "polygon(" + pts.map((p) => p[0] + "% " + p[1] + "%").join(", ") + ")";
+
+  if (dir === "bc") {
+    const a = [[0, 0], T].concat(linePts(T, E, false, 0)).concat(linePts(E, S, true, 8)).concat([[0, 100]]);
+    const b = [T, [100, 0], [100, 100], S].concat(linePts(S, E, true, 8)).concat(linePts(E, T, false, 0));
+    return [fmt(a), fmt(b)];
+  } else if (dir === "bl") {
+    const a = [S].concat(linePts(S, E, true, 8)).concat(linePts(E, T, false, 0)).concat([[100, 100]]);
+    const b = [T].concat(linePts(T, E, false, 0)).concat(linePts(E, S, true, 8)).concat([[0, 0]]);
+    return [fmt(a), fmt(b)];
+  } else { // br
+    const a = [S].concat(linePts(S, E, true, 8)).concat(linePts(E, T, false, 0)).concat([[0, 100]]);
+    const b = [T].concat(linePts(T, E, false, 0)).concat(linePts(E, S, true, 8)).concat([[100, 0]]);
+    return [fmt(a), fmt(b)];
+  }
+}
+
+// 两半沿撕方向的实时分离/旋转
+function tearTransform(dir, p, which) {
+  const k = clamp(p, 0, 1);
+  if (dir === "bc") {
+    return which === "A"
+      ? `translate(${-60 * k}px, ${-30 * k}px) rotate(${-14 * k}deg)`
+      : `translate(${60 * k}px, ${-30 * k}px) rotate(${14 * k}deg)`;
+  } else if (dir === "bl") {
+    return which === "A"
+      ? `translate(${-60 * k}px, ${40 * k}px) rotate(${-12 * k}deg)`
+      : `translate(${60 * k}px, ${-50 * k}px) rotate(${12 * k}deg)`;
+  } else { // br
+    return which === "A"
+      ? `translate(${60 * k}px, ${40 * k}px) rotate(${12 * k}deg)`
+      : `translate(${-60 * k}px, ${-50 * k}px) rotate(${-12 * k}deg)`;
+  }
+}
+
+// 撕到底后的飞散目标
+function flyFor(dir, which) {
+  if (dir === "bc") {
+    return which === "A" ? { dx: -170, dy: -70, rot: -22 } : { dx: 170, dy: -70, rot: 22 };
+  } else if (dir === "bl") {
+    return which === "A" ? { dx: -150, dy: 120, rot: -18 } : { dx: 150, dy: -130, rot: 18 };
+  } else {
+    return which === "A" ? { dx: 150, dy: 120, rot: 18 } : { dx: -150, dy: -130, rot: -18 };
+  }
+}
+
+function animatePiece(piece, target) {
+  const a = piece.animate(
+    [
+      { transform: "translate(0, 0) rotate(0deg)", opacity: 1 },
+      { transform: `translate(${target.dx}px, ${target.dy}px) rotate(${target.rot}deg)`, opacity: 0 },
+    ],
+    { duration: 500, easing: "cubic-bezier(.4, .05, .6, 1)", fill: "forwards" }
+  );
+  a.onfinish = () => piece.remove();
+}
+
+/* ================= 鼓励语 & 奖励庆祝 ================= */
+function showCheer(note) {
+  const cheer = CHEERS[Math.floor(Math.random() * CHEERS.length)];
+  const banner = document.createElement("div");
+  banner.className = "cheer-banner" + (note.reward ? " has-reward" : "");
+  banner.textContent = "🎉 " + cheer;
+  document.body.appendChild(banner);
+  setTimeout(() => banner.remove(), 2800);
+
+  if (note.reward) {
+    showReward(note.reward);
+    spawnConfetti();
+  }
+}
+
+function showReward(reward) {
+  const card = document.createElement("div");
+  card.className = "reward-card";
+  card.innerHTML =
+    '<div class="reward-emoji">🎁</div>' +
+    '<div class="reward-label">完成奖励</div>' +
+    '<div class="reward-text"></div>';
+  card.querySelector(".reward-text").textContent = reward;
+  document.body.appendChild(card);
+  setTimeout(() => card.remove(), 3200);
+}
+
+function spawnConfetti() {
+  const colors = ["#f9e27c", "#f6b8cf", "#a9d4f0", "#b8e0a8", "#ffce8a", "#cbb8f0", "#f8a8a8"];
+  for (let i = 0; i < 46; i++) {
+    const c = document.createElement("div");
+    c.className = "confetti";
+    c.style.left = (Math.random() * 100) + "%";
+    c.style.background = colors[i % colors.length];
+    c.style.width = (6 + Math.random() * 8) + "px";
+    c.style.height = (10 + Math.random() * 12) + "px";
+    c.style.animationDelay = (Math.random() * 0.8) + "s";
+    c.style.animationDuration = (1.6 + Math.random() * 1.5) + "s";
+    document.body.appendChild(c);
+    setTimeout(() => c.remove(), 4200);
+  }
+}
+
+/* ================= 设置 & 重置 ================= */
+settingsBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  settingsPanel.hidden = !settingsPanel.hidden;
+});
+document.addEventListener("click", (e) => {
+  if (!settingsPanel.hidden && !e.target.closest(".settings-panel") && !e.target.closest(".settings-btn")) {
+    settingsPanel.hidden = true;
+  }
+});
+resetDataBtn.addEventListener("click", () => {
+  settingsPanel.hidden = true;
+  confirmOverlay.hidden = false;
+});
+confirmCancelBtn.addEventListener("click", () => { confirmOverlay.hidden = true; });
+confirmOkBtn.addEventListener("click", () => {
+  confirmOverlay.hidden = true;
+  localStorage.removeItem(STORAGE_KEY);
+  state = defaultState();
+  render();
+  toast("已重置为初始状态");
+});
+confirmOverlay.addEventListener("mousedown", (e) => {
+  if (e.target === confirmOverlay) confirmOverlay.hidden = true;
+});
+
+/* ================= 破损检查 ================= */
+function checkOverdue() {
+  const hasOverdue = state.walls.some((wall) =>
+    wall.notes.some((n) => n.deadline && n.deadline < Date.now())
+  );
+  if (hasOverdue) render();
+}
+
+/* ================= 事件绑定 ================= */
+prevBtn.addEventListener("click", () => switchWall(state.current - 1));
+nextBtn.addEventListener("click", () => switchWall(state.current + 1));
+addBtn.addEventListener("click", openAddWall);
+deleteBtn.addEventListener("click", deleteWall);
+toolbarWallName.addEventListener("click", renameWall);
+addPlainBtn.addEventListener("click", () => addWall("plain"));
+addQuadrantBtn.addEventListener("click", () => addWall("quadrant"));
+cancelTypeBtn.addEventListener("click", () => { typeOverlay.hidden = true; });
+
+cancelBtn.addEventListener("click", closeEditor);
+saveBtn.addEventListener("click", saveFromEditor);
+clearDeadlineBtn.addEventListener("click", () => { deadlineInput.value = ""; });
+noteInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) saveFromEditor();
+});
+editorOverlay.addEventListener("mousedown", (e) => {
+  if (e.target === editorOverlay) closeEditor();
+});
+typeOverlay.addEventListener("mousedown", (e) => {
+  if (e.target === typeOverlay) typeOverlay.hidden = true;
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    if (!editorOverlay.hidden) closeEditor();
+    else if (!typeOverlay.hidden) typeOverlay.hidden = true;
+    else if (!confirmOverlay.hidden) confirmOverlay.hidden = true;
+    else if (!settingsPanel.hidden) settingsPanel.hidden = true;
+  } else if (e.key === "ArrowLeft" && editorOverlay.hidden && typeOverlay.hidden && confirmOverlay.hidden) {
+    switchWall(state.current - 1);
+  } else if (e.key === "ArrowRight" && editorOverlay.hidden && typeOverlay.hidden && confirmOverlay.hidden) {
+    switchWall(state.current + 1);
+  }
+});
+
+// 鼠标滚轮切换墙（带节流）
+let wheelLock = false;
+viewport.addEventListener("wheel", (e) => {
+  if (!editorOverlay.hidden || !typeOverlay.hidden || !confirmOverlay.hidden) return;
+  if (Math.abs(e.deltaY) < 20) return;
+  if (wheelLock) return;
+  wheelLock = true;
+  setTimeout(() => { wheelLock = false; }, 450);
+  if (e.deltaY > 0) switchWall(state.current + 1);
+  else switchWall(state.current - 1);
+}, { passive: true });
+
+/* ================= 启动 ================= */
+render();
+setInterval(checkOverdue, 30000);
+</script>
+</body>
+</html>
