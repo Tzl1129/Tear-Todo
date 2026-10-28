@@ -177,9 +177,19 @@
     font-size: 12px; opacity: .75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .note .note-meta.overdue { color: #b3452f; font-weight: 700; opacity: 1; }
+  .note .note-meta.due-soon { color: #c07a1a; font-weight: 700; opacity: 1; }
   .note .note-reward {
     position: absolute; left: 16px; right: 16px; bottom: 8px;
     font-size: 12px; opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* 快到期提醒 */
+  .note.due-soon {
+    box-shadow:
+      0 0 0 2px #e8a13a,
+      0 1px 2px rgba(0,0,0,0.12),
+      0 6px 14px rgba(0,0,0,0.16),
+      0 16px 30px rgba(0,0,0,0.08);
   }
 
   /* 破损状态 */
@@ -300,6 +310,11 @@
   .settings-item { padding: 11px 14px; border-radius: 8px; cursor: pointer; font-size: 14px; color: #4a463c; }
   .settings-item:hover { background: #f4f1ea; }
   .settings-item.danger { color: #b3452f; }
+  .settings-stat {
+    padding: 10px 14px; font-size: 13px; color: #1a1a1a; font-weight: 700;
+    border-bottom: 1px solid #eeeae0; cursor: default; white-space: nowrap;
+  }
+  .settings-stat .stat-num { color: #c0392b; font-weight: 700; }
 
   /* ===== 鼓励语 & 奖励庆祝 ===== */
   .cheer-banner {
@@ -348,6 +363,24 @@
     transition: all .3s; z-index: 200; letter-spacing: 1px;
   }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ===== 撤销条 ===== */
+  .undo-bar {
+    position: fixed; bottom: 28px; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(40,36,28,0.92); color: #fff;
+    padding: 8px 12px 8px 18px; border-radius: 24px;
+    display: flex; align-items: center; gap: 14px;
+    font-size: 14px; z-index: 210;
+    animation: fade-in .18s ease;
+  }
+  .undo-bar .undo-btn {
+    border: none; background: rgba(255,255,255,0.18); color: #fff;
+    padding: 6px 14px; border-radius: 16px; cursor: pointer;
+    font-size: 14px; font-family: inherit; transition: background .12s;
+  }
+  .undo-bar .undo-btn:hover { background: rgba(255,255,255,0.32); }
+  .undo-bar[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -375,6 +408,7 @@
 
   <!-- 设置面板（左上角弹出） -->
   <div class="settings-panel" id="settingsPanel" hidden>
+    <div class="settings-stat" id="statCompleted">📊 已总共撕掉 <span class="stat-num" id="statCount">0</span> 张便利贴</div>
     <div class="settings-item danger" id="resetData">🔄 重置数据</div>
   </div>
 
@@ -425,6 +459,11 @@
     </div>
   </div>
 
+  <!-- 撤销条（撕后 5 秒可撤回） -->
+  <div class="undo-bar" id="undoBar" hidden>
+    <span>已撕下一张便利贴</span>
+    <button class="undo-btn" id="undoBtn">↩ 撤销 <span id="undoCount">5</span>s</button>
+  </div>
   <div class="toast" id="toast"></div>
 
 <script>
@@ -457,6 +496,7 @@ function uid() { return Date.now().toString(36) + Math.random().toString(36).sli
 function defaultState() {
   return {
     current: 0,
+    stats: { completed: 0 },
     walls: [
       {
         id: uid(),
@@ -485,6 +525,7 @@ function load() {
     const s = JSON.parse(raw);
     if (!s || !Array.isArray(s.walls) || s.walls.length === 0) return null;
     s.walls.forEach((w) => { if (!w.type) w.type = "plain"; });
+    if (!s.stats) s.stats = { completed: 0 };
     return s;
   } catch (e) { return null; }
 }
@@ -524,6 +565,10 @@ const confirmOverlay = $("confirmOverlay");
 const confirmCancelBtn = $("confirmCancel");
 const confirmOkBtn = $("confirmOk");
 const toolbarWallName = $("toolbarWallName");
+const undoBar = $("undoBar");
+const undoBtn = $("undoBtn");
+const undoCount = $("undoCount");
+const statCount = $("statCount");
 
 /* ================= 音效（Web Audio 合成） ================= */
 let audioCtx = null;
@@ -624,6 +669,16 @@ function formatOverdue(ts) {
   if (hour < 24) return `已逾期 ${hour} 小时`;
   return `已逾期 ${day} 天`;
 }
+function formatRemaining(ts) {
+  const diff = ts - Date.now();
+  const min = Math.floor(diff / 60000);
+  const hour = Math.floor(diff / 3600000);
+  const day = Math.floor(diff / 86400000);
+  if (min < 1) return "不足 1 分钟";
+  if (min < 60) return `剩 ${min} 分钟`;
+  if (hour < 24) return `剩 ${hour} 小时`;
+  return `剩 ${day} 天`;
+}
 function toLocalInput(ts) {
   if (!ts) return "";
   const d = new Date(ts);
@@ -638,7 +693,12 @@ function render() {
   renderIndicators();
   renderWallNameLabel();
   updateNavButtons();
+  updateStats();
   save();
+}
+
+function updateStats() {
+  statCount.textContent = state.stats ? state.stats.completed : 0;
 }
 
 function renderWallNameLabel() {
@@ -716,11 +776,17 @@ function buildNoteEl(note) {
 
   const meta = document.createElement("div");
   meta.className = "note-meta";
-  const overdue = note.deadline && note.deadline < Date.now();
+  const now = Date.now();
+  const overdue = note.deadline && note.deadline < now;
+  const dueSoon = note.deadline && !overdue && (note.deadline - now) < 24 * 3600 * 1000;
   if (overdue) {
     el.classList.add("broken");
     meta.classList.add("overdue");
     meta.textContent = "⏰ " + formatOverdue(note.deadline);
+  } else if (dueSoon) {
+    el.classList.add("due-soon");
+    meta.classList.add("due-soon");
+    meta.textContent = "⏰ " + formatRemaining(note.deadline);
   } else if (note.deadline) {
     meta.textContent = "⏰ " + formatDeadline(note.deadline);
   }
@@ -816,7 +882,7 @@ function renameWall() {
 /* ================= 创建便利贴 ================= */
 function onWallClick(e) {
   if (e.target.closest(".note")) return;
-  if (dragJustFinished) return;
+  if (mousedownOnNote) return;
   const wallEl = e.currentTarget;
   const rect = wallEl.getBoundingClientRect();
   const x = ((e.clientX - rect.left) / rect.width) * 100;
@@ -899,7 +965,7 @@ function saveFromEditor() {
 
 /* ================= 拖拽移动 ================= */
 let drag = null;
-let dragJustFinished = false;
+let mousedownOnNote = false;
 
 function startDrag(e, el, note) {
   if (e.button !== undefined && e.button !== 0) return;
@@ -954,8 +1020,6 @@ function onDragEnd() {
     d.note.x = clamp(((d.el.getBoundingClientRect().left - r.left) / r.width) * 100, 0, 96);
     d.note.y = clamp(((d.el.getBoundingClientRect().top - r.top) / r.height) * 100, 0, 90);
     save();
-    dragJustFinished = true;
-    setTimeout(() => { dragJustFinished = false; }, 0);
   }
 }
 
@@ -1031,6 +1095,7 @@ function finishTear() {
     playDoneSound();
     render();
     showCheer(t.note);
+    beginUndo(t.note, t.wallIndex);
   }, 520);
 }
 
@@ -1137,6 +1202,57 @@ function animatePiece(piece, target) {
   a.onfinish = () => piece.remove();
 }
 
+/* ================= 撕后撤销 ================= */
+let pendingDelete = null;
+let pendingWallIndex = -1;
+let undoTimer = null;
+let undoCountdownTimer = null;
+
+function beginUndo(note, wallIndex) {
+  pendingDelete = note;
+  pendingWallIndex = wallIndex;
+  showUndoBar();
+  undoTimer = setTimeout(commitDelete, 5000);
+}
+
+function showUndoBar() {
+  undoBar.hidden = false;
+  let count = 5;
+  undoCount.textContent = count;
+  clearInterval(undoCountdownTimer);
+  undoCountdownTimer = setInterval(() => {
+    count--;
+    if (count > 0) undoCount.textContent = count;
+  }, 1000);
+}
+
+function hideUndoBar() {
+  undoBar.hidden = true;
+  clearInterval(undoCountdownTimer);
+  clearTimeout(undoTimer);
+}
+
+function commitDelete() {
+  hideUndoBar();
+  pendingDelete = null;
+  pendingWallIndex = -1;
+  state.stats.completed++;
+  save();
+}
+
+function undoDelete() {
+  if (!pendingDelete) return;
+  clearTimeout(undoTimer);
+  clearInterval(undoCountdownTimer);
+  undoBar.hidden = true;
+  const wall = state.walls[pendingWallIndex];
+  if (wall) wall.notes.push(pendingDelete);
+  pendingDelete = null;
+  pendingWallIndex = -1;
+  render();
+  toast("已撤回便利贴");
+}
+
 /* ================= 鼓励语 & 奖励庆祝 ================= */
 function showCheer(note) {
   const cheer = CHEERS[Math.floor(Math.random() * CHEERS.length)];
@@ -1208,10 +1324,11 @@ confirmOverlay.addEventListener("mousedown", (e) => {
 
 /* ================= 破损检查 ================= */
 function checkOverdue() {
-  const hasOverdue = state.walls.some((wall) =>
-    wall.notes.some((n) => n.deadline && n.deadline < Date.now())
+  const now = Date.now();
+  const has = state.walls.some((wall) =>
+    wall.notes.some((n) => n.deadline && (n.deadline - now) < 24 * 3600 * 1000)
   );
-  if (hasOverdue) render();
+  if (has) render();
 }
 
 /* ================= 事件绑定 ================= */
@@ -1220,6 +1337,10 @@ nextBtn.addEventListener("click", () => switchWall(state.current + 1));
 addBtn.addEventListener("click", openAddWall);
 deleteBtn.addEventListener("click", deleteWall);
 toolbarWallName.addEventListener("click", renameWall);
+undoBtn.addEventListener("click", undoDelete);
+document.addEventListener("mousedown", (e) => {
+  mousedownOnNote = !!e.target.closest(".note");
+});
 addPlainBtn.addEventListener("click", () => addWall("plain"));
 addQuadrantBtn.addEventListener("click", () => addWall("quadrant"));
 cancelTypeBtn.addEventListener("click", () => { typeOverlay.hidden = true; });
